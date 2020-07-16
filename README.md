@@ -1,2 +1,9 @@
-# covid-tracking-race-ethnicity-tools
-Various tools to process and work with Covid Tracking Project's Race &amp; Ethnicity data set
+# Covid Racial Data Tracker Tools
+
+A few tools to make it easier to analyze and use the data from the [Covid Racial Data Tracker (CRDT)](https://covidtracking.com/race).
+
+* [maps/](./maps) 
+
+    Shape file for population cartograms by race / ethnicity
+
+* 
