@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import scipy.special
 
+def series_to_int(series):
+    return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
+
 CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/u/1/d/e/2PACX-1vR_xmYt4ACPDZCDJcY12kCiMiH0ODyx3E1ZvgOHB8ae1tRcjXbs_yWBOA4j4uoCEADVfC1PS2jYO68B/pub?output=csv&gid=902690690'
 
 CASES = 'Cases'
@@ -14,10 +17,12 @@ df = pd.read_csv(CRDT_SOURCE_URL, header=2, na_filter=False, skipinitialspace=Tr
 
 population_query = dw.query(
 	'fryanpan13/covid-tracking-racial-data', 
-    'SELECT * FROM combined_population_data')
+    'SELECT * FROM population_data')
 population_df = population_query.dataframe
 
 population_df = population_df.rename(columns={'state': 'State', 'state_name': 'State Name', 'race': 'Race / Ethnicity', 'dataset': 'Dataset', 'geo_state_name': 'Geo State Name', 'population': 'Population' })
+
+population_df['Population'] = population_df['Population'].astype('Int64')
 
 population_index = ['Dataset', 'State', 'Race / Ethnicity']
 population_df = population_df.set_index(population_index)
@@ -40,6 +45,7 @@ races = ['Total', 'Known White', 'Known Black', 'Known LatinX / Hispanic', 'Know
     'Known AIAN', 'Known NHPI', 'Known Multiracial', 'Other', 'Unknown Race',
     'Known Hispanic', 'Known Non-Hispanic', 'Unknown Ethnicity'] 
 
+
 data = []
 for race in races:
     cases_col = race
@@ -47,14 +53,16 @@ for race in races:
     negatives_col = race + '.2'
     dataset = 'Ethnicity' if race in ['Known Hispanic', 'Known Non-Hispanic', 'Unknown Ethnicity'] else 'Race'
     race_df = df[['Date', 'State']]
-    race_df[CASES] = pd.to_numeric(df[cases_col], errors="coerce")
-    race_df[DEATHS] = pd.to_numeric(df[deaths_col], errors="coerce")
-    race_df[NEGATIVES] = pd.to_numeric(df[negatives_col], errors="coerce")    
+    race_df[CASES] = series_to_int(df[cases_col])
+    race_df[DEATHS] = series_to_int(df[deaths_col])
+    race_df[NEGATIVES] = series_to_int(df[negatives_col])
     race_df['Race / Ethnicity'] = race
     race_df['Dataset'] = dataset
     data.append(race_df)
 
 df = pd.concat(data, ignore_index=True)
+
+
 
 # Sort so all data for each state & ethnicity is adjacent and increasing in date
 df = df.sort_values(['Dataset', 'State', 'Race / Ethnicity', 'Date'])
@@ -119,28 +127,58 @@ def confidence_interval_hi(n):
     a = 0.05
     return scipy.special.gammaincinv(n + 1, 1 - 0.5 * a)
 
-# Compute per-capita metrics
-for m in METRICS:
+# Compute per-capita metrics per group
+print("Computing per capita metrics")
+per_capita_metrics = []
+per_capita_suffix = ' per 100,000'
+for source_metric in all_metrics:
+    if source_metric is 'Population': # No point calculating population per population :P
+        continue
+
+    per_capita_metrics.append(f'{source_metric}{per_capita_suffix}')
+
     for group in ['', 'White ', 'Total ', 'Non-Group ']:
-        metric_name = group + m
+        metric_name = group + source_metric
         population = group + 'Population'
-        for sub_metric in sub_metrics:
-            source_metric = f'{metric_name}{sub_metric}'
-            dest_metric = f'{source_metric} per 100,000'
+        dest_metric = f'{metric_name}{per_capita_suffix}'
 
-            source_lo = f'{source_metric} CI Lo'
-            source_hi = f'{source_metric} CI Hi'
-            dest_lo = f'{dest_metric} CI Lo'
-            dest_hi = f'{dest_metric} CI Hi'
+        print(f'{dest_metric} = {source_metric} / {population} * 100,000')
 
-            df[dest_metric] = df[source_metric] / df[population] * 100000
-            df[source_lo] = df[source_metric].apply(confidence_interval_lo)
-            df[source_hi] = df[source_metric].apply(confidence_interval_hi)
-            df[dest_lo] = df[source_lo] / df[population] * 100000
-            df[dest_hi] = df[source_hi] / df[population] * 100000        
+        source_lo = f'{source_metric} CI Lo'
+        source_hi = f'{source_metric} CI Hi'
+        dest_lo = f'{dest_metric} CI Lo'
+        dest_hi = f'{dest_metric} CI Hi'
 
-# TODO: Compute disparity metrics vs. each baseline and non-group    
+        df[dest_metric] = df[source_metric] / df[population] * 100000
+        df[source_lo] = df[source_metric].apply(confidence_interval_lo)
+        df[source_hi] = df[source_metric].apply(confidence_interval_hi)
+        df[dest_lo] = df[source_lo] / df[population] * 100000
+        df[dest_hi] = df[source_hi] / df[population] * 100000        
 
+all_metrics += per_capita_metrics
+print("")
+
+# TODO: Compute disparity metrics vs. each baseline and non-group 
+print("Computing disparity metrics")
+disparity_metrics = []
+for metric in per_capita_metrics:
+    for baseline in ['White', 'Non-Group']:
+        baseline_metric = f'{baseline} {metric}'
+        disparity_metric = f'{metric} Disparity vs. {baseline}'
+        disparity_significant = f'{disparity_metric} is Significant'
+
+        print(f'{disparity_metric} = {metric} / {baseline_metric}')
+        print(f'{disparity_significant} = {baseline_metric} CI doesn\'t overlap {metric} CI')
+
+        metric_lo = f'{metric} CI Lo'
+        metric_hi = f'{metric} CI Hi'
+        baseline_lo = f'{baseline_metric} CI Lo'
+        baseline_hi = f'{baseline_metric} CI Hi'
+
+        df[disparity_metric] = df[metric] / df[baseline_metric]
+        df[disparity_significant] = metric_lo > baseline_hi or metric_hi < baseline_lo 
+
+print("")
 
 df.to_csv('crdt_output.csv', index=True)
 client = dw.api_client()
