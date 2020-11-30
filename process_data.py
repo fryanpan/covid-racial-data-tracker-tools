@@ -6,15 +6,23 @@ import scipy.special
 def series_to_int(series):
     return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
 
-def doit():
-    CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/u/1/d/e/2PACX-1vR_xmYt4ACPDZCDJcY12kCiMiH0ODyx3E1ZvgOHB8ae1tRcjXbs_yWBOA4j4uoCEADVfC1PS2jYO68B/pub?output=csv&gid=902690690'
+def doit():    
+    CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS8SzaERcKJOD_EzrtCDK1dX1zkoMochlA9iHoHg_RSw3V8bkpfk1mpw4pfL5RdtSOyx_oScsUtyXyk/pub?gid=43720681&single=true&output=csv'
 
+    # Define some constants that match the source columns
     CASES = 'Cases'
     DEATHS = 'Deaths'
-    NEGATIVES = 'Negatives'
-    METRICS = [CASES, DEATHS, NEGATIVES]
+    HOSP = 'Hosp'
+    METRICS = [CASES, DEATHS, HOSP]
 
-    df = pd.read_csv(CRDT_SOURCE_URL, header=2, na_filter=False, skipinitialspace=True)
+    RACES = ['Total', 'White', 'Black', 'LatinX', 'Asian', 
+    'AIAN', 'NHPI', 'Multiracial', 'Other', 'Unknown',
+    'Ethnicity_Hispanic', 'Ethnicity_NonHispanic', 'Ethnicity_Unknown']
+
+    # Baseline race for comparison
+    BASELINE = 'White'
+
+    df = pd.read_csv(CRDT_SOURCE_URL, na_filter=False, skipinitialspace=True)
 
     population_query = dw.query(
         'fryanpan13/covid-tracking-racial-data', 
@@ -28,42 +36,28 @@ def doit():
     population_index = ['Dataset', 'State', 'Race / Ethnicity']
     population_df = population_df.set_index(population_index)
 
+    print(df.columns)
+
     # Reformat date column
     df = df[df['Date'] != '']
     df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d')
 
-    # Get rid of extra spaces in column names
-    df = df.rename(columns=lambda x: x.strip().replace(' .1','.1').replace(' .2','.2'))
-
-    # Standardize some column names
-    df = df.rename(columns={'Unknown': 'Unknown Race', 
-        'Unknown.1': 'Unknown Race.1', 
-        'Unknown.2': 'Unknown Ethnicity.1', 
-        'Unknown.3': 'Unknown Race.2',
-        'Unknown.4': 'Unknown Ethnicity.2'})
-
-    # Unpivot
-    races = ['Total', 'Known White', 'Known Black', 'Known LatinX / Hispanic', 'Known Asian', 
-        'Known AIAN', 'Known NHPI', 'Known Multiracial', 'Other', 'Unknown Race',
-        'Known Hispanic', 'Known Non-Hispanic', 'Unknown Ethnicity'] 
+    # Unpivot the data to one row per per race / ethnicity, per state, per date
 
 
     data = []
-    for race in races:
-        cases_col = race
-        deaths_col = race + '.1'
-        negatives_col = race + '.2'
-        dataset = 'Ethnicity' if race in ['Known Hispanic', 'Known Non-Hispanic', 'Unknown Ethnicity'] else 'Race'
+    for race in RACES:
         race_df = df[['Date', 'State']]
-        race_df[CASES] = series_to_int(df[cases_col])
-        race_df[DEATHS] = series_to_int(df[deaths_col])
-        race_df[NEGATIVES] = series_to_int(df[negatives_col])
-        race_df['Race / Ethnicity'] = race
+        race_df['Race / Ethnicity'] = race.replace('Ethnicity_', '')
+
+        dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
         race_df['Dataset'] = dataset
+        for metric in METRICS:
+            col_name = f'{metric}_{race}'
+            race_df[metric] = series_to_int(df[col_name])
         data.append(race_df)
 
     df = pd.concat(data, ignore_index=True)
-
 
 
     # Sort so all data for each state & ethnicity is adjacent and increasing in date
@@ -72,7 +66,7 @@ def doit():
     def sameIndex(df, period):
         return (df['Dataset'] == df['Dataset'].shift(period)) & (df['State'] == df['State'].shift(period)) & (df['Race / Ethnicity'] == df['Race / Ethnicity'].shift(period)) 
 
-    # compute differences, within the same dataset, state, and race / ethnicity
+    # compute differences over time, within the same dataset, state, and race / ethnicity
     all_metrics = METRICS[:]
     sub_metrics = ['', ' Delta', ' Delta 14d']
     for m in METRICS:
@@ -93,7 +87,7 @@ def doit():
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
 
-    white_df = df[(df['Race / Ethnicity'] == 'Known White') & (df['Dataset'] == 'Race')]
+    white_df = df[(df['Race / Ethnicity'] == BASELINE) & (df['Dataset'] == 'Race')]
     white_df = white_df.add_prefix('White ')
     white_df = white_df.rename(columns={'White Dataset': 'Dataset', 'White State': 'State', 'White Date': 'Date' })
     white_metrics = ['White ' + m for m in all_metrics]
@@ -193,7 +187,20 @@ def doit():
 
     print("")
 
-    df.to_csv('crdt_output.csv', index=True)
-    client = dw.api_client()
-    client.upload_files('fryanpan13/covid-tracking-racial-data',files='crdt_output.csv')
+    save_to_dw(df, 'crdt_output.csv')
 
+    print(df.columns)
+    # also save a basic output, without computed metrics
+    basic_columns = ['State', 'Date', 'Dataset', 'Race / Ethnicity', 'Population'] + METRICS
+    basic_df = df[basic_columns]
+    save_to_dw(basic_df, 'crdt_basic_output.csv')
+
+
+def save_to_dw(df, filename):
+    df.to_csv(f'/tmp/{filename}', index=True)
+    client = dw.api_client()
+    client.upload_files('fryanpan13/covid-tracking-racial-data',files=f'/tmp/{filename}')
+
+
+if __name__ == '__main__':
+    doit()
