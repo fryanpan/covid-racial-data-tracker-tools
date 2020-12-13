@@ -68,13 +68,14 @@ def doit():
 
     # compute differences over time, within the same dataset, state, and race / ethnicity
     all_metrics = METRICS[:]
-    sub_metrics = ['', ' Delta', ' Delta 14d']
+    # sub_metrics = ['', ' Delta', ' Delta 14d']
+    sub_metrics = ['', ' Delta 14d']
     for m in METRICS:
-        delta = f'{m} Delta'
+        # delta = f'{m} Delta'
         delta14 = f'{m} Delta 14d'    
-        df[delta] = (df[m] - df[m].shift(1)).where(sameIndex(df, 1))
+        # df[delta] = (df[m] - df[m].shift(1)).where(sameIndex(df, 1))
         df[delta14] = (df[m] - df[m].shift(4)).where(sameIndex(df, 4))
-        all_metrics += [delta, delta14]
+        all_metrics += [delta14]
 
     output_index = ['Dataset', 'State', 'Race / Ethnicity', 'Date']
     df = df.set_index(output_index)
@@ -197,9 +198,9 @@ def doit():
 
 
 def save_to_dw(df, filename):
-    df.to_csv(f'/tmp/{filename}', index=True)
+    df.to_csv(f'./{filename}', index=True)
     client = dw.api_client()
-    client.upload_files('fryanpan13/covid-tracking-racial-data',files=f'/tmp/{filename}')
+    client.upload_files('fryanpan13/covid-tracking-racial-data',files=f'./{filename}')
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
 node_modules
 crdt_output.csv
+crdt_basic_output.csv
 .vscode
