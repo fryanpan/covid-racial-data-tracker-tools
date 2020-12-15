@@ -6,6 +6,10 @@ import scipy.special
 def series_to_int(series):
     return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
 
+COMPUTE_TOTAL=False
+COMPUTE_NON_GROUP=False
+BASELINES=['White'] # Optionally add 'Total' and/or 'Non-Group' here for other baselines
+
 def doit():    
     CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS8SzaERcKJOD_EzrtCDK1dX1zkoMochlA9iHoHg_RSw3V8bkpfk1mpw4pfL5RdtSOyx_oScsUtyXyk/pub?gid=43720681&single=true&output=csv'
 
@@ -43,14 +47,16 @@ def doit():
     df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d')
 
     # Unpivot the data to one row per per race / ethnicity, per state, per date
-
-
     data = []
     for race in RACES:
-        race_df = df[['Date', 'State']]
-        race_df['Race / Ethnicity'] = race.replace('Ethnicity_', '')
-
         dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
+        race_df = df[['Date', 'State']]
+
+        output_race = race.replace('Ethnicity_', '')
+        if output_race == 'Unknown':
+            output_race = f'Unknown {dataset}'
+
+        race_df['Race / Ethnicity'] = output_race
         race_df['Dataset'] = dataset
         for metric in METRICS:
             col_name = f'{metric}_{race}'
@@ -71,9 +77,13 @@ def doit():
     # sub_metrics = ['', ' Delta', ' Delta 14d']
     sub_metrics = ['', ' Delta 14d']
     for m in METRICS:
+        # Deltas aren't super-meaningful except for checking data quality
+        # Since scrapes are 3 and 4 days apart, adjacent deltas are not comparable time periods
+        # (and there are also weekly effects)
         # delta = f'{m} Delta'
-        delta14 = f'{m} Delta 14d'    
         # df[delta] = (df[m] - df[m].shift(1)).where(sameIndex(df, 1))
+
+        delta14 = f'{m} Delta 14d'    
         df[delta14] = (df[m] - df[m].shift(4)).where(sameIndex(df, 4))
         all_metrics += [delta14]
 
@@ -93,26 +103,31 @@ def doit():
     white_df = white_df.rename(columns={'White Dataset': 'Dataset', 'White State': 'State', 'White Date': 'Date' })
     white_metrics = ['White ' + m for m in all_metrics]
 
-    total_df = df[df['Race / Ethnicity'] == 'Total']
-    total_df = total_df.add_prefix('Total ')
-    total_df = total_df.rename(columns={'Total Dataset': 'Dataset', 'Total State': 'State', 'Total Date': 'Date' })
-    total_metrics = ['Total ' + m for m in all_metrics]
+    if COMPUTE_TOTAL:
+        total_df = df[df['Race / Ethnicity'] == 'Total']
+        total_df = total_df.add_prefix('Total ')
+        total_df = total_df.rename(columns={'Total Dataset': 'Dataset', 'Total State': 'State', 'Total Date': 'Date' })
+        total_metrics = ['Total ' + m for m in all_metrics]
 
     join_index = ['State', 'Date']
     df = df.set_index(join_index)
     white_df = white_df.set_index(join_index)
-    total_df = total_df.set_index(join_index)
+    if COMPUTE_TOTAL:
+        total_df = total_df.set_index(join_index)
 
     df = pd.merge(df, white_df[white_metrics], on=join_index, how='left')
-    df = pd.merge(df, total_df[total_metrics], on=join_index, how='left')
+
+    if COMPUTE_TOTAL:
+        df = pd.merge(df, total_df[total_metrics], on=join_index, how='left')
 
     df.reset_index(drop=False, inplace=True)
 
     # Compute non-group metrics
-    for m in all_metrics:
-        non_group_metric = "Non-Group " + m
-        total_metric = "Total " + m
-        df[non_group_metric] = df[total_metric] - df[m]
+    if COMPUTE_NON_GROUP:
+        for m in all_metrics:
+            non_group_metric = "Non-Group " + m
+            total_metric = "Total " + m
+            df[non_group_metric] = df[total_metric] - df[m]
 
     # Calculate Poisson Distribution Confidence Intervals
     # https://newton.cx/~peter/2012/06/poisson-distribution-confidence-intervals/
@@ -141,7 +156,14 @@ def doit():
 
         per_capita_metrics.append(f'{source_metric}{per_capita_suffix}')
 
-        for group in ['', 'White ', 'Total ', 'Non-Group ']:
+        # for group in ['', 'White ', 'Total ', 'Non-Group ']:
+        groups = ['', 'White ']
+        if COMPUTE_TOTAL:
+            groups.append('Total ')
+        if COMPUTE_NON_GROUP:
+            groups.append('Non-Group ')
+
+        for group in groups:
             metric_name = group + source_metric
             population = group + 'Population'
             dest_metric = f'{metric_name}{per_capita_suffix}'
@@ -170,7 +192,7 @@ def doit():
     print("Computing disparity metrics")
     disparity_metrics = []
     for metric in per_capita_metrics:
-        for baseline in ['White', 'Non-Group']:
+        for baseline in BASELINES:
             baseline_metric = f'{baseline} {metric}'
             disparity_metric = f'{metric} Disparity vs. {baseline}'
             disparity_significant = f'{disparity_metric} is Significant'
