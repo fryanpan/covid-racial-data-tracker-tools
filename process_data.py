@@ -1,3 +1,4 @@
+import os
 import datadotworld as dw
 import pandas as pd
 import numpy as np
@@ -220,7 +221,7 @@ def doit():
 
 
 def save_to_dw(df, filename):
-    df.to_csv(f'./{filename}', index=True)
+    df.to_csv(os.tmpdir() + '/{filename}', index=True)
     client = dw.api_client()
     client.upload_files('fryanpan13/covid-tracking-racial-data',files=f'./{filename}')
 
