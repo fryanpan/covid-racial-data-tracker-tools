@@ -214,7 +214,8 @@ def doit():
             df[disparity_metric] = df[metric] / df[baseline_metric]
             df[disparity_significant] = (df[metric_lo] > df[baseline_hi]).all() or (df[metric_hi] < df[baseline_lo]).all() 
 
-    print("")
+    # Sometimes, if there's no non-group, for example, the denominator is zero.  Clean this up.
+    df = df.replace([np.inf, -np.inf], np.nan)
 
     save_to_dw(df, 'crdt_output.csv')
 
