@@ -7,9 +7,9 @@ import scipy.special
 def series_to_int(series):
     return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
 
-COMPUTE_TOTAL=False
-COMPUTE_NON_GROUP=False
-BASELINES=['White'] # Optionally add 'Total' and/or 'Non-Group' here for other baselines
+COMPUTE_TOTAL=True
+COMPUTE_NON_GROUP=True
+BASELINES=['White', 'Non-Group', 'Total']
 
 def doit():    
     CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS8SzaERcKJOD_EzrtCDK1dX1zkoMochlA9iHoHg_RSw3V8bkpfk1mpw4pfL5RdtSOyx_oScsUtyXyk/pub?gid=43720681&single=true&output=csv'
@@ -173,17 +173,22 @@ def doit():
 
             source_lo = f'{source_metric} CI Lo'
             source_hi = f'{source_metric} CI Hi'
+            source_range = f'{source_metric} CI Range'
             dest_lo = f'{dest_metric} CI Lo'
             dest_hi = f'{dest_metric} CI Hi'
+            dest_range = f'{dest_metric} CI Range'
 
             df[dest_metric] = df[metric_name] / df[population] * 100000
             df[source_lo] = df[metric_name].apply(confidence_interval_lo)
             df[source_hi] = df[metric_name].apply(confidence_interval_hi)
+            df[source_range] = df[source_hi] - df[source_lo]
 
             print(f'{source_metric}, {source_lo}, {source_hi}')
             print(df[source_lo])
             df[dest_lo] = df[source_lo] / df[population] * 100000
-            df[dest_hi] = df[source_hi] / df[population] * 100000        
+            df[dest_hi] = df[source_hi] / df[population] * 100000
+            df[dest_range] = df[dest_hi] - df[dest_lo]
+        
 
     all_metrics += per_capita_metrics
     print("")
@@ -221,9 +226,10 @@ def doit():
 
 
 def save_to_dw(df, filename):
-    df.to_csv(os.tmpdir() + '/{filename}', index=True)
+    file_path = f'/tmp/{filename}'
+    df.to_csv(file_path, index=True)
     client = dw.api_client()
-    client.upload_files('fryanpan13/covid-tracking-racial-data',files=f'./{filename}')
+    client.upload_files('fryanpan13/covid-tracking-racial-data',files=file_path)
 
 
 if __name__ == '__main__':
