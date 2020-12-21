@@ -7,8 +7,6 @@ import scipy.special
 def series_to_int(series):
     return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
 
-COMPUTE_TOTAL=True
-COMPUTE_NON_GROUP=True
 BASELINES=['White', 'Non-Group', 'Total']
 
 def doit():    
@@ -24,11 +22,9 @@ def doit():
     'AIAN', 'NHPI', 'Multiracial', 'Other', 'Unknown',
     'Ethnicity_Hispanic', 'Ethnicity_NonHispanic', 'Ethnicity_Unknown']
 
-    # Baseline race for comparison
-    BASELINE = 'White'
-
     df = pd.read_csv(CRDT_SOURCE_URL, na_filter=False, skipinitialspace=True)
 
+    # Load population data
     population_query = dw.query(
         'fryanpan13/covid-tracking-racial-data', 
         'SELECT * FROM population_data')
@@ -38,8 +34,23 @@ def doit():
 
     population_df['Population'] = population_df['Population'].astype('Int64')
 
+
+    # Load region data
+    region_query = dw.query(
+        'fryanpan13/covid-tracking-racial-data', 
+        'SELECT * FROM regions')
+    region_df  = region_query.dataframe
+
+    region_df = region_df.rename(columns={'state': 'State', 'region': 'Region'}) \
+                         .drop(columns=['state_name'])
+    population_df = population_df.set_index(['State'])
+    region_df = region_df.set_index(['State'])
+    population_df = population_df.merge(region_df, on=['State'])
+
     population_index = ['Dataset', 'State', 'Race / Ethnicity']
-    population_df = population_df.set_index(population_index)
+    population_df = population_df.reset_index(drop=False).set_index(population_index)
+
+    print(population_df.columns)
 
     print(df.columns)
 
@@ -99,36 +110,52 @@ def doit():
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
 
-    white_df = df[(df['Race / Ethnicity'] == BASELINE) & (df['Dataset'] == 'Race')]
+    join_index = ['State', 'Date']
+
+    # Compute white metrics
+    white_df = df[(df['Race / Ethnicity'] == 'White') & (df['Dataset'] == 'Race')]
     white_df = white_df.add_prefix('White ')
     white_df = white_df.rename(columns={'White Dataset': 'Dataset', 'White State': 'State', 'White Date': 'Date' })
+    white_df = white_df.set_index(join_index)
     white_metrics = ['White ' + m for m in all_metrics]
 
-    if COMPUTE_TOTAL:
-        total_df = df[df['Race / Ethnicity'] == 'Total']
-        total_df = total_df.add_prefix('Total ')
-        total_df = total_df.rename(columns={'Total Dataset': 'Dataset', 'Total State': 'State', 'Total Date': 'Date' })
-        total_metrics = ['Total ' + m for m in all_metrics]
+    # Compute total metrics
+    total_df = df[df['Race / Ethnicity'] == 'Total']
+    total_df = total_df.add_prefix('Total ')
+    total_df = total_df.rename(columns={'Total Dataset': 'Dataset', 'Total State': 'State', 'Total Date': 'Date' })
+    total_df = total_df.set_index(join_index)
+    total_metrics = ['Total ' + m for m in all_metrics]
 
-    join_index = ['State', 'Date']
+    # Compute Unknown metrics
+    unknown_join_index = ['State', 'Date', 'Dataset']
+    unknown_df = df[(df['Race / Ethnicity'] == 'Unknown Race') | (df['Race / Ethnicity'] == 'Unknown Ethnicity')]
+    unknown_df = unknown_df.add_prefix('Unknown ')
+    unknown_df = unknown_df.rename(columns={'Unknown Dataset': 'Dataset', 'Unknown State': 'State', 'Unknown Date': 'Date' })
+    unknown_df = unknown_df.set_index(unknown_join_index)
+    unknown_metrics = ['Unknown ' + m for m in all_metrics]
+    
+    
     df = df.set_index(join_index)
-    white_df = white_df.set_index(join_index)
-    if COMPUTE_TOTAL:
-        total_df = total_df.set_index(join_index)
-
     df = pd.merge(df, white_df[white_metrics], on=join_index, how='left')
-
-    if COMPUTE_TOTAL:
-        df = pd.merge(df, total_df[total_metrics], on=join_index, how='left')
+    df = pd.merge(df, total_df[total_metrics], on=join_index, how='left')
 
     df.reset_index(drop=False, inplace=True)
+    df.set_index(unknown_join_index)
+    df = pd.merge(df, unknown_df[unknown_metrics], on=unknown_join_index, how='left')
 
     # Compute non-group metrics
-    if COMPUTE_NON_GROUP:
-        for m in all_metrics:
-            non_group_metric = "Non-Group " + m
-            total_metric = "Total " + m
-            df[non_group_metric] = df[total_metric] - df[m]
+    for m in all_metrics:
+        non_group_metric = "Non-Group " + m
+        total_metric = "Total " + m
+        df[non_group_metric] = df[total_metric] - df[m]
+
+    # Compute unknown %
+    for m in all_metrics:
+        unknown_metric = f'Unknown {m}'
+        total_metric = f'Total {m}'
+        df[f'Percent Unknown {m}'] = df[unknown_metric] / df[total_metric]
+
+    df.reset_index(drop=False, inplace=True)
 
     # Calculate Poisson Distribution Confidence Intervals
     # https://newton.cx/~peter/2012/06/poisson-distribution-confidence-intervals/
@@ -158,11 +185,7 @@ def doit():
         per_capita_metrics.append(f'{source_metric}{per_capita_suffix}')
 
         # for group in ['', 'White ', 'Total ', 'Non-Group ']:
-        groups = ['', 'White ']
-        if COMPUTE_TOTAL:
-            groups.append('Total ')
-        if COMPUTE_NON_GROUP:
-            groups.append('Non-Group ')
+        groups = ['', 'White ', 'Total ', 'Non-Group ']
 
         for group in groups:
             metric_name = group + source_metric
@@ -221,7 +244,7 @@ def doit():
 
     print(df.columns)
     # also save a basic output, without computed metrics
-    basic_columns = ['State', 'Date', 'Dataset', 'Race / Ethnicity', 'Population'] + METRICS
+    basic_columns = ['Region', 'State', 'Date', 'Dataset', 'Race / Ethnicity', 'Population'] + METRICS
     basic_df = df[basic_columns]
     save_to_dw(basic_df, 'crdt_basic_output.csv')
 
