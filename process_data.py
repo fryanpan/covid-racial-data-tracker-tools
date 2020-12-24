@@ -30,9 +30,12 @@ def doit():
         'SELECT * FROM population_data')
     population_df = population_query.dataframe
 
-    population_df = population_df.rename(columns={'state': 'State', 'state_name': 'State Name', 'race': 'Race / Ethnicity', 'dataset': 'Dataset', 'geo_state_name': 'Geo State Name', 'population': 'Population' })
+    population_df = population_df.rename(columns={'state': 'State', 'state_name': 'State Name', 'race': 'Race / Ethnicity', 
+        'dataset': 'Dataset', 'geo_state_name': 'Geo State Name', 
+        'population': 'Population', 'population_35': 'Population 35+' })
 
     population_df['Population'] = population_df['Population'].astype('Int64')
+    population_df['Population 35+'] = population_df['Population 35+'].astype('float').astype('Int64')
 
 
     # Load region data
@@ -106,6 +109,7 @@ def doit():
     df = df.join(population_df, population_index)
 
     all_metrics.append("Population")
+    all_metrics.append("Population 35+")
 
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
@@ -177,7 +181,7 @@ def doit():
     # No point calculating population per population :P
     # Also the "Delta" metrics from one date to the previous date aren't consistently comparable
     # time periods.  Mainly useful for for debugging data issues
-    metrics_to_skip = ['Population', 'Cases Delta', 'Deaths Delta', 'Negatives Delta']
+    metrics_to_skip = ['Population', 'Population 35+', 'Cases Delta', 'Deaths Delta', 'Negatives Delta']
     for source_metric in all_metrics:
         if source_metric in metrics_to_skip: 
             continue
@@ -186,35 +190,43 @@ def doit():
 
         # for group in ['', 'White ', 'Total ', 'Non-Group ']:
         groups = ['', 'White ', 'Total ', 'Non-Group ']
+        populations = ['Population']
+        suffix = ['']
+        if source_metric in ['Deaths', 'Deaths Delta 14d']:
+            populations.append('Population 35+')
+            suffix.append(' 35+')
+            per_capita_metrics.append(f'{source_metric}{per_capita_suffix} 35+')
 
-        for group in groups:
-            metric_name = group + source_metric
-            population = group + 'Population'
-            dest_metric = f'{metric_name}{per_capita_suffix}'
+        for population_field, population_suffix in zip(populations, suffix):
+            for group in groups:
+                metric_name = group + source_metric
+                population = f'{group}{population_field}'
+                dest_metric = f'{metric_name}{per_capita_suffix}{population_suffix}'
 
-            print(f'{dest_metric} = {source_metric} / {population} * 100,000')
+                print(f'{dest_metric} = {source_metric} / {population} * 100,000')
 
-            source_lo = f'{source_metric} CI Lo'
-            source_hi = f'{source_metric} CI Hi'
-            source_range = f'{source_metric} CI Range'
-            dest_lo = f'{dest_metric} CI Lo'
-            dest_hi = f'{dest_metric} CI Hi'
-            dest_range = f'{dest_metric} CI Range'
+                source_lo = f'{source_metric} CI Lo'
+                source_hi = f'{source_metric} CI Hi'
+                source_range = f'{source_metric} CI Range'
+                dest_lo = f'{dest_metric} CI Lo'
+                dest_hi = f'{dest_metric} CI Hi'
+                dest_range = f'{dest_metric} CI Range'
 
-            df[dest_metric] = df[metric_name] / df[population] * 100000
-            df[source_lo] = df[metric_name].apply(confidence_interval_lo)
-            df[source_hi] = df[metric_name].apply(confidence_interval_hi)
-            df[source_range] = df[source_hi] - df[source_lo]
+                df[dest_metric] = df[metric_name] / df[population] * 100000
+                df[source_lo] = df[metric_name].apply(confidence_interval_lo)
+                df[source_hi] = df[metric_name].apply(confidence_interval_hi)
+                df[source_range] = df[source_hi] - df[source_lo]
 
-            print(f'{source_metric}, {source_lo}, {source_hi}')
-            print(df[source_lo])
-            df[dest_lo] = df[source_lo] / df[population] * 100000
-            df[dest_hi] = df[source_hi] / df[population] * 100000
-            df[dest_range] = df[dest_hi] - df[dest_lo]
+                print(f'{source_metric}, {source_lo}, {source_hi}')
+                df[dest_lo] = df[source_lo] / df[population] * 100000
+                df[dest_hi] = df[source_hi] / df[population] * 100000
+                df[dest_range] = df[dest_hi] - df[dest_lo]
         
+    print("Computed per-capita metrics:")
+    print('\n'.join(per_capita_metrics))
 
     all_metrics += per_capita_metrics
-    print("")
+
 
 
     # TODO: Compute disparity metrics vs. each baseline and non-group 
