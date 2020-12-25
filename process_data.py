@@ -32,10 +32,13 @@ def doit():
 
     population_df = population_df.rename(columns={'state': 'State', 'state_name': 'State Name', 'race': 'Race / Ethnicity', 
         'dataset': 'Dataset', 'geo_state_name': 'Geo State Name', 
-        'population': 'Population', 'population_35': 'Population 35+' })
+        'population': 'Population', 
+        'population_35': 'Population 35+',
+        'population_55': 'Population 55+' })
 
     population_df['Population'] = population_df['Population'].astype('Int64')
     population_df['Population 35+'] = population_df['Population 35+'].astype('float').astype('Int64')
+    population_df['Population 55+'] = population_df['Population 55+'].astype('float').astype('Int64')
 
 
     # Load region data
@@ -110,6 +113,7 @@ def doit():
 
     all_metrics.append("Population")
     all_metrics.append("Population 35+")
+    all_metrics.append("Population 55+")
 
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
@@ -181,7 +185,7 @@ def doit():
     # No point calculating population per population :P
     # Also the "Delta" metrics from one date to the previous date aren't consistently comparable
     # time periods.  Mainly useful for for debugging data issues
-    metrics_to_skip = ['Population', 'Population 35+', 'Cases Delta', 'Deaths Delta', 'Negatives Delta']
+    metrics_to_skip = ['Population', 'Population 35+', 'Population 55+', 'Cases Delta', 'Deaths Delta', 'Negatives Delta']
     for source_metric in all_metrics:
         if source_metric in metrics_to_skip: 
             continue
@@ -196,6 +200,11 @@ def doit():
             populations.append('Population 35+')
             suffix.append(' 35+')
             per_capita_metrics.append(f'{source_metric}{per_capita_suffix} 35+')
+
+            populations.append('Population 55+')
+            suffix.append(' 55+')
+            per_capita_metrics.append(f'{source_metric}{per_capita_suffix} 55+')
+
 
         for population_field, population_suffix in zip(populations, suffix):
             for group in groups:
