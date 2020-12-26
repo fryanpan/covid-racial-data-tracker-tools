@@ -47,7 +47,7 @@ def doit():
         'SELECT * FROM regions')
     region_df  = region_query.dataframe
 
-    region_df = region_df.rename(columns={'state': 'State', 'region': 'Region'}) \
+    region_df = region_df.rename(columns={'state': 'State', 'region': 'Region', 'subregion': 'Subregion'}) \
                          .drop(columns=['state_name'])
     population_df = population_df.set_index(['State'])
     region_df = region_df.set_index(['State'])
