@@ -49,6 +49,18 @@ def doit():
 
     region_df = region_df.rename(columns={'state': 'State', 'region': 'Region', 'subregion': 'Subregion'}) \
                          .drop(columns=['state_name'])
+
+    # Load expected deaths data
+    expected_deaths_query = dw.query(
+        'fryanpan13/covid-tracking-racial-data', 
+        'SELECT * FROM expected_deaths')
+    expected_deaths_df  = expected_deaths_query.dataframe[['state', 'race', 'dataset', 'expected_deaths']]
+    expected_deaths_df = expected_deaths_df.rename(columns={'state': 'State', 
+                                                            'dataset': 'Dataset',
+                                                            'race': 'Race / Ethnicity', 
+                                                            'expected_deaths': 'Expected Deaths'})
+    expected_deaths_df['Expected Deaths'] = expected_deaths_df['Expected Deaths'].astype('float')
+
     population_df = population_df.set_index(['State'])
     region_df = region_df.set_index(['State'])
     population_df = population_df.merge(region_df, on=['State'])
@@ -56,8 +68,10 @@ def doit():
     population_index = ['Dataset', 'State', 'Race / Ethnicity']
     population_df = population_df.reset_index(drop=False).set_index(population_index)
 
-    print(population_df.columns)
+    expected_deaths_df = expected_deaths_df.reset_index(drop=False).set_index(population_index)
+    population_df = population_df.merge(expected_deaths_df, on=population_index)
 
+    print(population_df.columns)
     print(df.columns)
 
     # Reformat date column
@@ -114,6 +128,7 @@ def doit():
     all_metrics.append("Population")
     all_metrics.append("Population 35+")
     all_metrics.append("Population 55+")
+    all_metrics.append('Expected Deaths')
 
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
@@ -185,7 +200,8 @@ def doit():
     # No point calculating population per population :P
     # Also the "Delta" metrics from one date to the previous date aren't consistently comparable
     # time periods.  Mainly useful for for debugging data issues
-    metrics_to_skip = ['Population', 'Population 35+', 'Population 55+', 'Cases Delta', 'Deaths Delta', 'Negatives Delta']
+    metrics_to_skip = ['Population', 'Population 35+', 'Population 55+', 
+                       'Cases Delta', 'Deaths Delta', 'Negatives Delta']
     for source_metric in all_metrics:
         if source_metric in metrics_to_skip: 
             continue
