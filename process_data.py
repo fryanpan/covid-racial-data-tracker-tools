@@ -7,23 +7,56 @@ import scipy.special
 def series_to_int(series):
     return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
 
+CASES = 'Cases'
+DEATHS = 'Deaths'
+HOSP = 'Hosp'
+METRICS = [CASES, DEATHS, HOSP]
 BASELINES=['White', 'Non-Group', 'Total']
 
-def doit():    
-    CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS8SzaERcKJOD_EzrtCDK1dX1zkoMochlA9iHoHg_RSw3V8bkpfk1mpw4pfL5RdtSOyx_oScsUtyXyk/pub?gid=43720681&single=true&output=csv'
+RACES = ['Total', 'White', 'Black', 'LatinX', 'Asian', 
+         'AIAN', 'NHPI', 'Multiracial', 'Other', 'Unknown',
+         'Ethnicity_Hispanic', 'Ethnicity_NonHispanic', 'Ethnicity_Unknown']
 
-    # Define some constants that match the source columns
-    CASES = 'Cases'
-    DEATHS = 'Deaths'
-    HOSP = 'Hosp'
-    METRICS = [CASES, DEATHS, HOSP]
+all_metrics = METRICS[:]
 
-    RACES = ['Total', 'White', 'Black', 'LatinX', 'Asian', 
-    'AIAN', 'NHPI', 'Multiracial', 'Other', 'Unknown',
-    'Ethnicity_Hispanic', 'Ethnicity_NonHispanic', 'Ethnicity_Unknown']
+def unpivot(df):
+    # Unpivot the data to one row per per race / ethnicity, per state, per date
+    data = []
+    for race in RACES:
+        dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
+        race_df = df[['Date', 'State']]
 
-    df = pd.read_csv(CRDT_SOURCE_URL, na_filter=False, skipinitialspace=True)
+        output_race = race.replace('Ethnicity_', '')
+        if output_race == 'Unknown':
+            output_race = f'Unknown {dataset}'
 
+        race_df['Race / Ethnicity'] = output_race
+        race_df['Dataset'] = dataset
+        for metric in METRICS:
+            col_name = f'{metric}_{race}'
+            race_df[metric] = series_to_int(df[col_name])
+        data.append(race_df)
+
+    return pd.concat(data, ignore_index=True)
+
+def sameIndex(df, period):
+    return (df['Dataset'] == df['Dataset'].shift(period)) & (df['State'] == df['State'].shift(period)) & (df['Race / Ethnicity'] == df['Race / Ethnicity'].shift(period)) 
+
+def compute_deltas(df):
+    global all_metrics
+
+    for m in METRICS:
+        # Deltas aren't super-meaningful except for checking data quality
+        # Since scrapes are 3 and 4 days apart, adjacent deltas are not comparable time periods
+        # (and there are also weekly effects)
+        # delta = f'{m} Delta'
+        # df[delta] = (df[m] - df[m].shift(1)).where(sameIndex(df, 1))
+
+        delta14 = f'{m} Delta 14d'    
+        df[delta14] = (df[m] - df[m].shift(4)).where(sameIndex(df, 4))
+        all_metrics += [delta14]
+
+def join_population(df):
     # Load population data
     population_query = dw.query(
         'fryanpan13/covid-tracking-racial-data', 
@@ -74,61 +107,16 @@ def doit():
     print(population_df.columns)
     print(df.columns)
 
-    # Reformat date column
-    df = df[df['Date'] != '']
-    df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d')
-
-    # Unpivot the data to one row per per race / ethnicity, per state, per date
-    data = []
-    for race in RACES:
-        dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
-        race_df = df[['Date', 'State']]
-
-        output_race = race.replace('Ethnicity_', '')
-        if output_race == 'Unknown':
-            output_race = f'Unknown {dataset}'
-
-        race_df['Race / Ethnicity'] = output_race
-        race_df['Dataset'] = dataset
-        for metric in METRICS:
-            col_name = f'{metric}_{race}'
-            race_df[metric] = series_to_int(df[col_name])
-        data.append(race_df)
-
-    df = pd.concat(data, ignore_index=True)
-
-
-    # Sort so all data for each state & ethnicity is adjacent and increasing in date
-    df = df.sort_values(['Dataset', 'State', 'Race / Ethnicity', 'Date'])
-
-    def sameIndex(df, period):
-        return (df['Dataset'] == df['Dataset'].shift(period)) & (df['State'] == df['State'].shift(period)) & (df['Race / Ethnicity'] == df['Race / Ethnicity'].shift(period)) 
-
-    # compute differences over time, within the same dataset, state, and race / ethnicity
-    all_metrics = METRICS[:]
-    # sub_metrics = ['', ' Delta', ' Delta 14d']
-    sub_metrics = ['', ' Delta 14d']
-    for m in METRICS:
-        # Deltas aren't super-meaningful except for checking data quality
-        # Since scrapes are 3 and 4 days apart, adjacent deltas are not comparable time periods
-        # (and there are also weekly effects)
-        # delta = f'{m} Delta'
-        # df[delta] = (df[m] - df[m].shift(1)).where(sameIndex(df, 1))
-
-        delta14 = f'{m} Delta 14d'    
-        df[delta14] = (df[m] - df[m].shift(4)).where(sameIndex(df, 4))
-        all_metrics += [delta14]
-
-    output_index = ['Dataset', 'State', 'Race / Ethnicity', 'Date']
-    df = df.set_index(output_index)
-
-    # Join population
-    df = df.join(population_df, population_index)
-
     all_metrics.append("Population")
     all_metrics.append("Population 35+")
     all_metrics.append("Population 55+")
     all_metrics.append('Expected Deaths')
+
+    # Join population
+    return df.join(population_df, population_index)
+
+def compute_baselines(df):
+    global all_metrics
 
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
@@ -164,21 +152,10 @@ def doit():
 
     df.reset_index(drop=False, inplace=True)
     df.set_index(unknown_join_index)
-    df = pd.merge(df, unknown_df[unknown_metrics], on=unknown_join_index, how='left')
+    return pd.merge(df, unknown_df[unknown_metrics], on=unknown_join_index, how='left')
 
-    # Compute non-group metrics
-    for m in all_metrics:
-        non_group_metric = "Non-Group " + m
-        total_metric = "Total " + m
-        df[non_group_metric] = df[total_metric] - df[m]
-
-    # Compute unknown %
-    for m in all_metrics:
-        unknown_metric = f'Unknown {m}'
-        total_metric = f'Total {m}'
-        df[f'Percent Unknown {m}'] = df[unknown_metric] / df[total_metric]
-
-    df.reset_index(drop=False, inplace=True)
+def compute_per_capita_metrics(df):
+    global all_metrics
 
     # Calculate Poisson Distribution Confidence Intervals
     # https://newton.cx/~peter/2012/06/poisson-distribution-confidence-intervals/
@@ -252,9 +229,10 @@ def doit():
 
     all_metrics += per_capita_metrics
 
+    compute_disparity(df, per_capita_metrics)
 
-
-    # TODO: Compute disparity metrics vs. each baseline and non-group 
+def compute_disparity(df, per_capita_metrics):
+     # TODO: Compute disparity metrics vs. each baseline and non-group 
     print("Computing disparity metrics")
     disparity_metrics = []
     for metric in per_capita_metrics:
@@ -274,12 +252,55 @@ def doit():
             df[disparity_metric] = df[metric] / df[baseline_metric]
             df[disparity_significant] = (df[metric_lo] > df[baseline_hi]).all() or (df[metric_hi] < df[baseline_lo]).all() 
 
+
+def doit():    
+    CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS8SzaERcKJOD_EzrtCDK1dX1zkoMochlA9iHoHg_RSw3V8bkpfk1mpw4pfL5RdtSOyx_oScsUtyXyk/pub?gid=43720681&single=true&output=csv'
+    df = pd.read_csv(CRDT_SOURCE_URL, na_filter=False, skipinitialspace=True)
+
+    # Reformat date column
+    df = df[df['Date'] != '']
+    df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d')
+
+    df = unpivot(df)    
+
+    # Sort so all data for each state & ethnicity is adjacent and increasing in date
+    df = df.sort_values(['Dataset', 'State', 'Race / Ethnicity', 'Date'])
+
+    # compute differences over time, within the same dataset, state, and race / ethnicity
+    compute_deltas(df)
+
+    output_index = ['Dataset', 'State', 'Race / Ethnicity', 'Date']
+    df = df.set_index(output_index)
+
+    # Join population
+    df = join_population(df)
+
+    # Compute baseline metrics (e.g. for White, Total, Unknown)
+    df = compute_baselines(df)    
+
+    # Compute non-group metrics
+    for m in all_metrics:
+        non_group_metric = "Non-Group " + m
+        total_metric = "Total " + m
+        df[non_group_metric] = df[total_metric] - df[m]
+
+    # Compute unknown %
+    for m in all_metrics:
+        unknown_metric = f'Unknown {m}'
+        total_metric = f'Total {m}'
+        df[f'Percent Unknown {m}'] = df[unknown_metric] / df[total_metric]
+
+    df.reset_index(drop=False, inplace=True)
+
+    compute_per_capita_metrics(df)
+   
     # Sometimes, if there's no non-group, for example, the denominator is zero.  Clean this up.
     df = df.replace([np.inf, -np.inf], np.nan)
 
     save_to_dw(df, 'crdt_output.csv')
 
     print(df.columns)
+
     # also save a basic output, without computed metrics
     basic_columns = ['Region', 'State', 'Date', 'Dataset', 'Race / Ethnicity', 'Population'] + METRICS
     basic_df = df[basic_columns]

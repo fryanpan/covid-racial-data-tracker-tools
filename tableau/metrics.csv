@@ -2,4 +2,5 @@ join_key,metric_key
 1,Cases
 1,Deaths
 1,Deaths 35+
+1,IAD
 1,Hospitalizations
