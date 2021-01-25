@@ -28,9 +28,9 @@ RACES = [
     RaceEthnicity.MULTIRACIAL.value,
     RaceEthnicity.OTHER.value,
     RaceEthnicity.UNKNOWN.value,
-    f'{ETHNICITY_PREFIX}{RaceEthnicity.HISPANIC}', 
-    f'{ETHNICITY_PREFIX}{RaceEthnicity.NON_HISPANIC}', 
-    f'{ETHNICITY_PREFIX}{RaceEthnicity.UNKNOWN}'
+    f'{ETHNICITY_PREFIX}{RaceEthnicity.HISPANIC.value}', 
+    f'{ETHNICITY_PREFIX}{RaceEthnicity.NON_HISPANIC.value}', 
+    f'{ETHNICITY_PREFIX}{RaceEthnicity.UNKNOWN.value}'
 ]
 
 all_metrics = METRICS[:]
@@ -43,6 +43,7 @@ def unpivot(df):
         dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
         race_df = df[['Date', 'State']]
 
+        source_race = 'Latinx' if race == RaceEthnicity.LATINX.value else race
         output_race = race.replace(ETHNICITY_PREFIX, '')
         if output_race == RaceEthnicity.UNKNOWN:
             output_race = f'Unknown {dataset}'
@@ -50,7 +51,7 @@ def unpivot(df):
         race_df['Race / Ethnicity'] = output_race
         race_df['Dataset'] = dataset
         for metric in METRICS:
-            col_name = f'{metric}_{race}'
+            col_name = f'{metric}_{source_race}'
             race_df[metric] = series_to_int(df[col_name])
         data.append(race_df)
 
