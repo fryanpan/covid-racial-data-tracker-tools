@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import scipy.special
 
+from shared import RaceEthnicity, save_to_dw
+
 def series_to_int(series):
     return pd.to_numeric(series.str.replace(',','').str.replace('N/A','')).astype('Int64')
 
@@ -13,21 +15,36 @@ HOSP = 'Hosp'
 METRICS = [CASES, DEATHS, HOSP]
 BASELINES=['White', 'Non-Group', 'Total']
 
-RACES = ['Total', 'White', 'Black', 'LatinX', 'Asian', 
-         'AIAN', 'NHPI', 'Multiracial', 'Other', 'Unknown',
-         'Ethnicity_Hispanic', 'Ethnicity_NonHispanic', 'Ethnicity_Unknown']
+ETHNICITY_PREFIX = 'Ethnicity_'
+
+RACES = [
+    RaceEthnicity.TOTAL.value,
+    RaceEthnicity.WHITE.value,
+    RaceEthnicity.BLACK.value,
+    RaceEthnicity.LATINX.value,
+    RaceEthnicity.ASIAN.value,
+    RaceEthnicity.AIAN.value,
+    RaceEthnicity.NHPI.value,
+    RaceEthnicity.MULTIRACIAL.value,
+    RaceEthnicity.OTHER.value,
+    RaceEthnicity.UNKNOWN.value,
+    f'{ETHNICITY_PREFIX}{RaceEthnicity.HISPANIC}', 
+    f'{ETHNICITY_PREFIX}{RaceEthnicity.NON_HISPANIC}', 
+    f'{ETHNICITY_PREFIX}{RaceEthnicity.UNKNOWN}'
+]
 
 all_metrics = METRICS[:]
 
 def unpivot(df):
+    print(df.columns)
     # Unpivot the data to one row per per race / ethnicity, per state, per date
     data = []
     for race in RACES:
         dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
         race_df = df[['Date', 'State']]
 
-        output_race = race.replace('Ethnicity_', '')
-        if output_race == 'Unknown':
+        output_race = race.replace(ETHNICITY_PREFIX, '')
+        if output_race == RaceEthnicity.UNKNOWN:
             output_race = f'Unknown {dataset}'
 
         race_df['Race / Ethnicity'] = output_race
@@ -307,11 +324,6 @@ def doit():
     save_to_dw(basic_df, 'crdt_basic_output.csv')
 
 
-def save_to_dw(df, filename):
-    file_path = f'/tmp/{filename}'
-    df.to_csv(file_path, index=True)
-    client = dw.api_client()
-    client.upload_files('fryanpan13/covid-tracking-racial-data',files=file_path)
 
 
 if __name__ == '__main__':
