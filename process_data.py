@@ -45,7 +45,7 @@ def unpivot(df):
 
         source_race = 'Latinx' if race == RaceEthnicity.LATINX.value else race
         output_race = race.replace(ETHNICITY_PREFIX, '')
-        if output_race == RaceEthnicity.UNKNOWN:
+        if output_race == RaceEthnicity.UNKNOWN.value:
             output_race = f'Unknown {dataset}'
 
         race_df['Race / Ethnicity'] = output_race
