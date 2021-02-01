@@ -116,6 +116,16 @@ def generate_output_by_single_age():
     df = df.append(hispanic_total)
     
     hispanic_total[COL_RACE_ETHNICITY] = RaceEthnicity.LATINX.value
+    hispanic_total[COL_DATASET] = 'Race'
+    df = df.append(hispanic_total)
+
+    hispanic_total[COL_RACE_ETHNICITY] = 'Unknown Race'
+    hispanic_total[COL_POPULATION_TOTAL] = np.nan
+    df = df.append(hispanic_total)
+
+    hispanic_total[COL_RACE_ETHNICITY] = 'Unknown Ethnicity'
+    hispanic_total[COL_DATASET] = 'Ethnicity'
+    hispanic_total[COL_POPULATION_TOTAL] = np.nan
     df = df.append(hispanic_total)
 
     # Generate NonHispanic from totals
