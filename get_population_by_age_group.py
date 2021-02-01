@@ -33,6 +33,7 @@ RACE_MAP = {
 
 
 COL_AGE = 'Age'
+COL_DATASET = 'Dataset' # used to match CRDT Dataset names ('Race' and 'Ethnicity')
 COL_POPULATION = 'Population'
 COL_POPULATION_NON_HISPANIC = 'Population NonHispanic'
 COL_POPULATION_TOTAL = 'Population Total'
@@ -84,7 +85,10 @@ def generate_output_by_single_age():
     total_df = df[df['Ethnicity'] == 'Total'].drop('Ethnicity', axis='columns')
 
     non_hispanic_total = non_hispanic_df.groupby(by=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_INCLUDES_HISPANIC]).sum()
+    non_hispanic_total[COL_DATASET] = 'Ethnicity'
+
     hispanic_total = hispanic_df.groupby(by=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_INCLUDES_HISPANIC]).sum()
+    hispanic_total[COL_DATASET] = 'Ethnicity'
 
     df = non_hispanic_df.merge(total_df, how='left', on=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, 'Race', COL_AGE, COL_RACE_INCLUDES_HISPANIC]) \
                         .rename({
@@ -92,6 +96,8 @@ def generate_output_by_single_age():
                                     'Population_x': COL_POPULATION_NON_HISPANIC,
                                     'Population_y': COL_POPULATION_TOTAL
                                 }, axis='columns')
+    df[COL_DATASET] = 'Race'
+
 
     mask = df[COL_RACE_INCLUDES_HISPANIC] == 'no'
     df.loc[mask, COL_POPULATION] = df.loc[mask, COL_POPULATION_NON_HISPANIC]
@@ -99,7 +105,7 @@ def generate_output_by_single_age():
     mask = df[COL_RACE_INCLUDES_HISPANIC] == 'yes'
     df.loc[mask, COL_POPULATION] = df.loc[mask, COL_POPULATION_TOTAL]
 
-    standard_column_order = [COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_ETHNICITY, COL_RACE_INCLUDES_HISPANIC, COL_POPULATION, COL_POPULATION_NON_HISPANIC, COL_POPULATION_TOTAL]
+    standard_column_order = [COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_DATASET, COL_RACE_ETHNICITY, COL_RACE_INCLUDES_HISPANIC, COL_POPULATION, COL_POPULATION_NON_HISPANIC, COL_POPULATION_TOTAL]
     df = df[standard_column_order]
 
     # Generate LatinX and Hispanic from totals
@@ -141,7 +147,7 @@ def generate_output_by_age_range(single_age_df: pd.DataFrame):
     print(df)
 
     df = df.reset_index()
-    df = df.groupby([COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_RACE_ETHNICITY, COL_RACE_INCLUDES_HISPANIC, 'age_range', 'min_age', 'max_age', 'standard_weight']) \
+    df = df.groupby([COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_DATASET, COL_RACE_ETHNICITY, COL_RACE_INCLUDES_HISPANIC, 'age_range', 'min_age', 'max_age', 'standard_weight']) \
            .agg({
                 COL_POPULATION: 'sum',
                 COL_POPULATION_NON_HISPANIC: 'sum',
