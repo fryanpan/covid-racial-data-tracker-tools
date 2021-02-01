@@ -18,5 +18,5 @@ class RaceEthnicity(Enum):
 def save_to_dw(df, filename):
     file_path = f'/tmp/{filename}'
     df.to_csv(file_path, index=True)
-    client = dw.api_client()
-    client.upload_files('fryanpan13/covid-tracking-racial-data',files=file_path)
+    # client = dw.api_client()
+    # client.upload_files('fryanpan13/covid-tracking-racial-data',files=file_path)
