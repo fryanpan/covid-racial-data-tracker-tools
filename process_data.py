@@ -38,7 +38,7 @@ AGE_GROUP_DATASET_ALL = 'All'
 AGE_GROUP_DATASET_AGE_GROUP = 'Age Group'
 
 COL_AGE_GROUP = 'Age Group'
-COL_AGE_GROUP_DATASET = 'Age_Group_Dataset'
+COL_AGE_GROUP_DATASET = 'Age Group Dataset'
 COL_CASES = 'Cases'
 COL_DATASET = 'Dataset'
 COL_DATE = 'Date'
@@ -48,6 +48,7 @@ COL_HOSP = 'Hosp'
 COL_POPULATION = 'Population'
 COL_RACE_ETHNICITY = 'Race / Ethnicity'
 COL_REGION = 'Region'
+COL_SOURCE = 'Source'
 COL_SUBREGION = 'Subregion'
 COL_STANDARD_WEIGHT = 'Standard Weight'
 COL_STATE = 'State'
@@ -112,6 +113,8 @@ def join_population_all(df):
         'population': COL_POPULATION})
 
     population_df[COL_POPULATION] = population_df[COL_POPULATION].astype('Int64')
+    print('unknown ethnicity data')
+    print(population_df[population_df[COL_RACE_ETHNICITY] == 'Unknown Ethnicity'])
 
     # Load region data
     region_query = dw.query(
@@ -194,15 +197,21 @@ def join_population_age_range(df):
 def compute_baselines(df):
     global all_metrics
 
+    # @TODO The join logic here is hairy.  Clean it up a bit
+
     # Compute baseline metrics (vs. White, vs. All) and join in
     df.reset_index(drop=False, inplace=True)
 
-    join_index = [COL_STATE, COL_DATE, COL_AGE_GROUP]
+    join_index = [COL_STATE, COL_DATE, COL_AGE_GROUP, COL_AGE_GROUP_DATASET]
 
     # Compute white metrics
     white_df = df[(df[COL_RACE_ETHNICITY] == 'White') & (df[COL_DATASET] == 'Race')]
     white_df = white_df.add_prefix('White ')
-    white_df = white_df.rename(columns={'White Dataset': 'Dataset', 'White State': COL_STATE, 'White Date': COL_DATE, 'White Age Group': 'Age Group'})
+    white_df = white_df.rename(columns={'White Dataset': 'Dataset', 
+        f'White {COL_AGE_GROUP_DATASET}': COL_AGE_GROUP_DATASET,
+        'White State': COL_STATE, 
+        'White Date': COL_DATE, 
+        'White Age Group': 'Age Group'})
     white_df = white_df.set_index(join_index)
     white_metrics = ['White ' + m for m in all_metrics]
     print('white_df.columns')
@@ -213,6 +222,7 @@ def compute_baselines(df):
     total_df = df[df[COL_RACE_ETHNICITY] == 'Total']
     total_df = total_df.add_prefix('Total ')
     total_df = total_df.rename(columns={'Total Dataset': COL_DATASET, 
+        f'Total {COL_AGE_GROUP_DATASET}': COL_AGE_GROUP_DATASET,
         'Total State': COL_STATE, 
         'Total Date': COL_DATE, 
         'Total Age Group': 'Age Group'})
@@ -222,10 +232,11 @@ def compute_baselines(df):
     print(total_df.columns)
 
     # Compute Unknown metrics
-    unknown_join_index = [COL_STATE, COL_DATE, COL_DATASET]
+    unknown_join_index = [COL_STATE, COL_DATE, COL_DATASET, COL_AGE_GROUP, COL_AGE_GROUP_DATASET]
     unknown_df = df[(df[COL_RACE_ETHNICITY] == 'Unknown Race') | (df[COL_RACE_ETHNICITY] == 'Unknown Ethnicity')]
     unknown_df = unknown_df.add_prefix('Unknown ')
     unknown_df = unknown_df.rename(columns={'Unknown Dataset': COL_DATASET, 
+        f'Unknown {COL_AGE_GROUP_DATASET}': COL_AGE_GROUP_DATASET,
         'Unknown State': COL_STATE, 
         'Unknown Date': COL_DATE, 
         'Unknown Age Group': 'Age Group'})
@@ -235,7 +246,9 @@ def compute_baselines(df):
     
     df = df.set_index(join_index)
     df = pd.merge(df, white_df[white_metrics], on=join_index, how='left')
+    print(len(df))
     df = pd.merge(df, total_df[total_metrics], on=join_index, how='left')
+    print(len(df))
 
     df.reset_index(drop=False, inplace=True)
     df.set_index(unknown_join_index)
@@ -345,14 +358,23 @@ def read_overall_data():
     CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS8SzaERcKJOD_EzrtCDK1dX1zkoMochlA9iHoHg_RSw3V8bkpfk1mpw4pfL5RdtSOyx_oScsUtyXyk/pub?gid=43720681&single=true&output=csv'
     df = pd.read_csv(CRDT_SOURCE_URL, na_filter=False, skipinitialspace=True)
 
+    initial_len = len(df)
+
     # Reformat date column
     df = df[df[COL_DATE] != '']
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], format='%Y%m%d')
 
-    df = unpivot(df, [COL_DATE, COL_STATE], AGE_GROUP_DATASET_ALL)    
+    assert len(df) == initial_len
+
+    df = unpivot(df, [COL_DATE, COL_STATE], AGE_GROUP_DATASET_ALL)   
+
+    unpivot_len = len(df)
+    assert unpivot_len == initial_len * len(RACES)
 
     # Join population
     df = join_population_all(df)
+
+    assert len(df) == unpivot_len
 
     # Set age group to a dummy value
     df[COL_AGE_GROUP] = '0_100'
@@ -361,6 +383,8 @@ def read_overall_data():
 def read_age_range_data():
     CRDT_SOURCE_URL='https://docs.google.com/spreadsheets/d/1e4jogN9bryY8Odb2AaIavLNN-MnMU3hsdeQTWeVhCRo/export?format=csv&id=1e4jogN9bryY8Odb2AaIavLNN-MnMU3hsdeQTWeVhCRo&gid=1719970815'
     df = pd.read_csv(CRDT_SOURCE_URL, na_filter=False, skipinitialspace=True, header=[1])
+
+    initial_len = len(df)
 
     metric_map = {
         'Cases': '',
@@ -395,18 +419,25 @@ def read_age_range_data():
     df = df[df[COL_DATE] != '']
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], format='%Y%m%d')
 
+    assert(len(df) == initial_len)
+
     # Ignore total, male, female entries
     df = df[df[COL_AGE_GROUP] != 'Total']
     df = df[df[COL_AGE_GROUP] != 'Female']
     df = df[df[COL_AGE_GROUP] != 'Male']    
     # print(df[COL_AGE_GROUP].value_counts())
 
+    filtered_len = len(df)
+
     df = unpivot(df, [COL_DATE, COL_STATE, COL_AGE_GROUP], AGE_GROUP_DATASET_AGE_GROUP)    
 
-    print(df)
+    unpivot_len = len(df)
+    assert unpivot_len == filtered_len * len(RACES) 
 
     # Join population
     df = join_population_age_range(df)
+
+    assert len(df) == unpivot_len
 
     return df
 
@@ -431,13 +462,18 @@ def doit():
         COL_EXPECTED_DEATHS
     ]
     age_range_df = read_age_range_data()[standard_column_order]
+    age_range_df[COL_SOURCE] = 'Age Range Data'
+
     overall_df = read_overall_data()[standard_column_order]
+    overall_df[COL_SOURCE] = 'CRDT Data'
 
     # print('Column comparison')
     # print(age_range_df.columns)
     # print(overall_df.columns)
 
     df = age_range_df.append(overall_df)
+
+    initial_len = len(df)
 
     all_metrics.append("Population")
     all_metrics.append('Expected Deaths')
@@ -450,9 +486,12 @@ def doit():
     # compute differences over time, within the same dataset, state, and race / ethnicity
     compute_deltas(df)
 
+
     print('done compute_deltas')
     print(df)
     print(df.columns)
+    assert len(df) == initial_len
+
 
     df = df.set_index(output_index)
 
@@ -462,13 +501,22 @@ def doit():
     print('done compute_baselines')
     print(df)
     print(df.columns)   
+    assert len(df) == initial_len
 
     # Compute non-group and unknown metrics
     compute_unknown_non_group(df)
 
+    print('done compute unknown')
+    print(df)
+    assert len(df) == initial_len
+
     df.reset_index(drop=False, inplace=True)
 
     compute_per_capita_metrics(df)
+
+    print('done compute per-capita')
+    print(df)
+    assert len(df) == initial_len
    
     # Sometimes, if there's no non-group, for example, the denominator is zero.  Clean this up.
     df = df.replace([np.inf, -np.inf], np.nan)
