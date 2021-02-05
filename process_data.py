@@ -165,6 +165,7 @@ def join_population_age_range(df):
                                                   'race_ethnicity': COL_RACE_ETHNICITY, 
                                                   'dataset': 'Dataset', 
                                                   'geo_state_name': 'Geo State Name', 
+                                                  'standard_weight': COL_STANDARD_WEIGHT,
                                                   'population': COL_POPULATION})
 
     population_df[COL_POPULATION] = population_df[COL_POPULATION].astype('Int64')
@@ -378,6 +379,7 @@ def read_overall_data():
 
     # Set age group to a dummy value
     df[COL_AGE_GROUP] = '0_100'
+    df[COL_STANDARD_WEIGHT] = 1
     return df
 
 def read_age_range_data():
@@ -459,7 +461,8 @@ def doit():
         COL_DEATHS,
         COL_HOSP,
         COL_POPULATION,
-        COL_EXPECTED_DEATHS
+        COL_EXPECTED_DEATHS,
+        COL_STANDARD_WEIGHT
     ]
     age_range_df = read_age_range_data()[standard_column_order]
     age_range_df[COL_SOURCE] = 'Age Range Data'
