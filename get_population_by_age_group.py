@@ -31,15 +31,39 @@ RACE_MAP = {
     6: RaceEthnicity.MULTIRACIAL.value
 }
 
+
+COL_AGE = 'Age'
+COL_DATASET = 'Dataset' # used to match CRDT Dataset names ('Race' and 'Ethnicity')
+COL_POPULATION = 'Population'
+COL_POPULATION_NON_HISPANIC = 'Population NonHispanic'
+COL_POPULATION_TOTAL = 'Population Total'
+COL_RACE_ETHNICITY = 'Race / Ethnicity'
+COL_RACE_INCLUDES_HISPANIC = 'Race Includes Hispanic'
+COL_STATE = 'State'
+COL_STATE_NAME = 'State Name'
+COL_TILEGRAM = 'Tilegram Geo State Name'
+
 def get_age_ranges():
-    # Load population data
+    # Load standard weights by age range 
     age_range_query = dw.query(
         'fryanpan13/covid-tracking-racial-data', 
         'SELECT * FROM standard_population_weights')
     return age_range_query.dataframe
 
+def get_state_reporting_category():
+    state_reporting_df = dw.query(
+        'fryanpan13/covid-tracking-racial-data', 
+        'SELECT * FROM state_reporting_category')
+    return state_reporting_df.dataframe
+
 
 def generate_output_by_single_age():  
+    state_reporting_df = get_state_reporting_category() \
+        .rename({ 'state': COL_STATE, 
+                  'state_name': COL_STATE_NAME,
+                  'tilegram_geo_state_name': COL_TILEGRAM,
+                  'race_includes_hispanic': COL_RACE_INCLUDES_HISPANIC }, axis=1)
+    print(state_reporting_df)
     df = pd.read_csv('sc-est2019-alldata6.csv')
     
     df = df.replace({ 'SEX': SEX_MAP, 'ORIGIN': ORIGIN_MAP, 'RACE': RACE_MAP})
@@ -48,44 +72,66 @@ def generate_output_by_single_age():
     df = df.drop('SEX', axis='columns')
 
 
-    df = df.rename({'NAME': 'State', 
+    df = df.rename({'NAME': COL_STATE_NAME, 
                     'ORIGIN': 'Ethnicity', 
                     'RACE': 'Race', 
-                    'AGE': 'Age',
-                    'POPESTIMATE2019': 'Population'}, 
+                    'AGE': COL_AGE,
+                    'POPESTIMATE2019': COL_POPULATION}, 
                     axis='columns')
-    print(df)
+    df = df.merge(state_reporting_df, how='left', on=[COL_STATE_NAME])
 
     non_hispanic_df = df[df['Ethnicity'] == 'Not Hispanic'].drop('Ethnicity', axis='columns')
     hispanic_df = df[df['Ethnicity'] == 'Hispanic'].drop('Ethnicity', axis='columns')
     total_df = df[df['Ethnicity'] == 'Total'].drop('Ethnicity', axis='columns')
 
-    non_hispanic_total = non_hispanic_df.groupby(by=['State', 'Age']).sum()
-    hispanic_total = hispanic_df.groupby(by=['State', 'Age']).sum()
+    non_hispanic_total = non_hispanic_df.groupby(by=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_INCLUDES_HISPANIC]).sum()
+    non_hispanic_total[COL_DATASET] = 'Ethnicity'
 
-    df = non_hispanic_df.merge(total_df, how='left', on=['State', 'Race', 'Age']) \
+    hispanic_total = hispanic_df.groupby(by=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_INCLUDES_HISPANIC]).sum()
+    hispanic_total[COL_DATASET] = 'Ethnicity'
+
+    df = non_hispanic_df.merge(total_df, how='left', on=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, 'Race', COL_AGE, COL_RACE_INCLUDES_HISPANIC]) \
                         .rename({
-                                    'Race': 'Race_Ethnicity',
-                                    'Population_x': 'Population_NonHispanic',
-                                    'Population_y': 'Population_Total'
+                                    'Race': COL_RACE_ETHNICITY,
+                                    'Population_x': COL_POPULATION_NON_HISPANIC,
+                                    'Population_y': COL_POPULATION_TOTAL
                                 }, axis='columns')
+    df[COL_DATASET] = 'Race'
 
-    standard_column_order = ['State', 'Age', 'Race_Ethnicity', 'Population_NonHispanic', 'Population_Total']
+
+    mask = df[COL_RACE_INCLUDES_HISPANIC] == 'no'
+    df.loc[mask, COL_POPULATION] = df.loc[mask, COL_POPULATION_NON_HISPANIC]
+
+    mask = df[COL_RACE_INCLUDES_HISPANIC] == 'yes'
+    df.loc[mask, COL_POPULATION] = df.loc[mask, COL_POPULATION_TOTAL]
+
+    standard_column_order = [COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_DATASET, COL_RACE_ETHNICITY, COL_RACE_INCLUDES_HISPANIC, COL_POPULATION, COL_POPULATION_NON_HISPANIC, COL_POPULATION_TOTAL]
+    df = df[standard_column_order]
 
     # Generate LatinX and Hispanic from totals
-    hispanic_total['Race_Ethnicity'] = RaceEthnicity.HISPANIC.value
-    hispanic_total['Population_NonHispanic'] = 0
-    hispanic_total.rename({'Population': 'Population_Total'}, axis='columns', inplace=True)
+    hispanic_total[COL_RACE_ETHNICITY] = RaceEthnicity.HISPANIC.value
+    hispanic_total[COL_POPULATION_NON_HISPANIC] = 0
+    hispanic_total[COL_POPULATION_TOTAL] = hispanic_total[COL_POPULATION]
     hispanic_total = hispanic_total.reset_index()[standard_column_order]
     df = df.append(hispanic_total)
     
-    hispanic_total['Race_Ethnicity'] = RaceEthnicity.LATINX.value
+    hispanic_total[COL_RACE_ETHNICITY] = RaceEthnicity.LATINX.value
+    hispanic_total[COL_DATASET] = 'Race'
     df = df.append(hispanic_total)
 
+    hispanic_total[COL_RACE_ETHNICITY] = 'Unknown Race'
+    hispanic_total[COL_POPULATION_TOTAL] = np.nan
+    df = df.append(hispanic_total)
+
+    hispanic_total[COL_RACE_ETHNICITY] = 'Unknown Ethnicity'
+    hispanic_total[COL_DATASET] = 'Ethnicity'
+    df = df.append(hispanic_total)
+
+
     # Generate NonHispanic from totals
-    non_hispanic_total['Race_Ethnicity'] = RaceEthnicity.NON_HISPANIC.value
-    non_hispanic_total['Population_Total'] = non_hispanic_total['Population']
-    non_hispanic_total.rename({'Population': 'Population_NonHispanic'}, axis='columns', inplace=True)
+    non_hispanic_total[COL_RACE_ETHNICITY] = RaceEthnicity.NON_HISPANIC.value
+    non_hispanic_total[COL_POPULATION_TOTAL] = non_hispanic_total[COL_POPULATION]
+    non_hispanic_total[COL_POPULATION_NON_HISPANIC] = non_hispanic_total[COL_POPULATION]
     non_hispanic_total = non_hispanic_total.reset_index()[standard_column_order]
     df = df.append(non_hispanic_total)
     df = df[standard_column_order]
@@ -106,19 +152,19 @@ def generate_output_by_age_range(single_age_df: pd.DataFrame):
     df = df.reset_index()
     print(df)
 
-    df['in_range'] = (df['Age'] >= df['min_age']) & (df['Age'] <= df['max_age'])
+    df['in_range'] = (df[COL_AGE] >= df['min_age']) & (df[COL_AGE] <= df['max_age'])
     df = df[df['in_range']]
     print(df)
 
     df = df.reset_index()
-    df = df.groupby(['State', 'Race_Ethnicity', 'age_range', 'min_age', 'max_age']) \
+    df = df.groupby([COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_DATASET, COL_RACE_ETHNICITY, COL_RACE_INCLUDES_HISPANIC, 'age_range', 'min_age', 'max_age', 'standard_weight']) \
            .agg({
-                'Population_NonHispanic': 'sum',
-                'Population_Total': 'sum'
+                COL_POPULATION: 'sum',
+                COL_POPULATION_NON_HISPANIC: 'sum',
+                COL_POPULATION_TOTAL: 'sum'
             }) \
            .reset_index() \
            .rename({'age_range': 'Age Range', 'min_age': 'Min Age', 'max_age': 'Max Age'}, axis='columns')
-    print(df)
     return df
 
 def doit():    
