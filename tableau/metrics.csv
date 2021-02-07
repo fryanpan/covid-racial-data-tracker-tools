@@ -3,4 +3,6 @@ join_key,metric_key
 1,Deaths
 1,Deaths 35+
 1,IAD
+1,AAD
 1,Hospitalizations
+

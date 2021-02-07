@@ -90,6 +90,9 @@ def generate_output_by_single_age():
     hispanic_total = hispanic_df.groupby(by=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_INCLUDES_HISPANIC]).sum()
     hispanic_total[COL_DATASET] = 'Ethnicity'
 
+    total_total = total_df.groupby(by=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, COL_AGE, COL_RACE_INCLUDES_HISPANIC]).sum()
+    total_total[COL_DATASET] = 'Race'
+
     df = non_hispanic_df.merge(total_df, how='left', on=[COL_STATE, COL_STATE_NAME, COL_TILEGRAM, 'Race', COL_AGE, COL_RACE_INCLUDES_HISPANIC]) \
                         .rename({
                                     'Race': COL_RACE_ETHNICITY,
@@ -134,6 +137,14 @@ def generate_output_by_single_age():
     non_hispanic_total[COL_POPULATION_NON_HISPANIC] = non_hispanic_total[COL_POPULATION]
     non_hispanic_total = non_hispanic_total.reset_index()[standard_column_order]
     df = df.append(non_hispanic_total)
+
+    # Generate Total from totals
+    total_total[COL_RACE_ETHNICITY] = RaceEthnicity.TOTAL.value
+    total_total[COL_POPULATION_TOTAL] = total_total[COL_POPULATION]
+    total_total[COL_POPULATION_NON_HISPANIC] = non_hispanic_total[COL_POPULATION]
+    total_total = total_total.reset_index()[standard_column_order]
+    df = df.append(total_total)
+
     df = df[standard_column_order]
     
     print('Single Age Output')
