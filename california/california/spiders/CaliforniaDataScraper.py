@@ -7,10 +7,6 @@ import re
 from bs4 import BeautifulSoup
 import scrapy
 
-csv_writer_lock = threading.Lock()
-f = open(f'output_{time.time()}.csv', 'w')
-data_writer = csv.writer(f)
-data_writer.writerow(['archive_timestamp', 'archive_date', 'date', 'age_range', 'race_ethnicity', 'cases', 'deaths'])
 
 def cleanup(text: Optional[str]) -> Optional[str]:
     if text is None:
@@ -20,12 +16,14 @@ def cleanup(text: Optional[str]) -> Optional[str]:
                .replace('\xa0', ' ')\
                .replace('\r', ' ')\
                .replace('\n', ' ')\
-               .replace('  ', ' ')
+               .replace('  ', ' ')\
+               .strip()
 
 class CaliforniaDataScraper(scrapy.Spider):
     name = 'ca-race-ethnicity'
 
     HEADER_AGE_RANGE_MAP = {
+        'Cases and Deaths associated with COVID-19 by Race and Ethnicity': 'All',
         'All Cases and Deaths associated with COVID-19 by Race and Ethnicity': 'All',
         'All Cases and Deaths by Race and Ethnicity Among Ages 18+': '18+',
         'Proportions of Cases and Deaths by Race and Ethnicity Among Ages 0‐17': '0_17',
@@ -62,7 +60,6 @@ class CaliforniaDataScraper(scrapy.Spider):
             print(f'Scraping {date}')
         else:
             top_content = cleanup(soup.find('div', 'NewsItemContent').text)
-            print(f'top_content={repr(top_content)}')
 
             result = re.search(date_pattern, top_content)
             if result is not None:
@@ -102,8 +99,11 @@ class CaliforniaDataScraper(scrapy.Spider):
                 cases = int(values[0])
                 deaths = int(values[2])
 
-                with csv_writer_lock:
-                    row = [ timestamp, archive_date, date, age_range, race_ethnicity, cases, deaths ]
-                    data_writer.writerow(row)
-                    print(row)
-
+                row = [ timestamp, archive_date, date, age_range, race_ethnicity, cases, deaths ]
+                data.append(row)
+                
+        return {
+            'timestamp': timestamp,
+            'date': date,
+            'data': data
+        }

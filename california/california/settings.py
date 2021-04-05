@@ -14,13 +14,13 @@ NEWSPIDER_MODULE = 'california.spiders'
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
-#USER_AGENT = 'california (+http://www.yourdomain.com)'
+USER_AGENT = 'california covid-19 race ethnicity data scraper (+https://github.com/fryanpan/covid-racial-data-tracker-tools)'
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = True
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)
-#CONCURRENT_REQUESTS = 32
+CONCURRENT_REQUESTS = 3
 
 # Configure a delay for requests for the same website (default: 0)
 # See https://docs.scrapy.org/en/latest/topics/settings.html#download-delay
@@ -55,7 +55,8 @@ DOWNLOADER_MIDDLEWARES = {
     'scrapy_wayback_machine.WaybackMachineMiddleware': 5,
 }
 
-WAYBACK_MACHINE_TIME_RANGE = ('20210301', '20210301')
+WAYBACK_MACHINE_TIME_RANGE = ('20200301', '20211201')
+# WAYBACK_MACHINE_TIME_RANGE = ('20210301', '20210331')
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
@@ -65,9 +66,9 @@ WAYBACK_MACHINE_TIME_RANGE = ('20210301', '20210301')
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-#ITEM_PIPELINES = {
-#    'california.pipelines.CaliforniaPipeline': 300,
-#}
+ITEM_PIPELINES = {
+   'california.pipelines.CaliforniaPipeline': 300,
+}
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
