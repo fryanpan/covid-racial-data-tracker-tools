@@ -64,8 +64,7 @@ def unpivot(df, initial_columns: List[str], age_group_dataset: str):
         dataset = 'Ethnicity' if race.startswith('Ethnicity') else 'Race'
         race_df = df[initial_columns]
 
-        source_race = 'Latinx' if race == RaceEthnicity.LATINX.value \
-            and age_group_dataset == AGE_GROUP_DATASET_ALL else race
+        source_race = 'Latinx' if race == RaceEthnicity.LATINX.value else race
         output_race = race.replace(ETHNICITY_PREFIX, '')
         if output_race == RaceEthnicity.UNKNOWN.value:
             output_race = f'Unknown {dataset}'
@@ -407,9 +406,11 @@ def read_age_range_data():
                 rename_map[f'Non_Hispanic{suffix}'] = f'{metric}_Ethnicity_{race_ethnicity.value}'
             elif race_ethnicity.value == 'Hispanic':
                 rename_map[f'Hispanic{suffix}'] = f'{metric}_Ethnicity_{race_ethnicity.value}'
+            elif race_ethnicity.value == 'LatinX' and metric != 'Hosp':
+                rename_map[f'Latinx{suffix}'] = f'{metric}_Latinx'
             else:
                 rename_map[f'{race_ethnicity.value}{suffix}'] = f'{metric}_{race_ethnicity.value}'
-        
+    rename_map['LatinX'] = 'Hosp_Latinx'
     df = df.rename(columns=rename_map)
 
     # Fix one data input issues for non-float inputs in the original spreadsheet
