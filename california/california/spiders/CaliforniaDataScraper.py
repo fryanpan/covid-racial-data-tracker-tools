@@ -36,6 +36,25 @@ class CaliforniaDataScraper(scrapy.Spider):
         'Proportions of Cases and Deaths by Race and Ethnicity Among Ages 80+': '80+'
     }
 
+    # Matches shared.py RaceEthnicity Enum
+    RACE_ETHNICITY_MAP = {
+        'African American': 'Black',
+        'African American/Black': 'Black',
+        'American Indian': 'AIAN',
+        'American Indian or Alaska Native': 'AIAN',
+        'Asian': 'Asian',
+        'Black': 'Black',
+        'Latino': 'LatinX',
+        'Multi-Race': 'Multiracial',
+        'Native Hawaiian and other Pacific Islander': 'NHPI',
+        'Native Hawaiian or Pacific Islander': 'NHPI',
+        'Native Hawaiianand other Pacific Islander': 'NHPI',
+        'Other': 'Other',
+        'Total': 'Total',
+        'Total with data': 'Total',
+        'White': 'White'
+    }
+
     def start_requests(self):
         yield scrapy.Request('https://www.cdph.ca.gov/Programs/CID/DCDC/Pages/COVID-19/Race-Ethnicity.aspx')
 
@@ -92,8 +111,8 @@ class CaliforniaDataScraper(scrapy.Spider):
                     continue
 
                 race_ethnicity = cleanup(fields[0].text)
-                if race_ethnicity == 'Total with data':
-                    race_ethnicity = 'Total'
+                if race_ethnicity:
+                    race_ethnicity = CaliforniaDataScraper.RACE_ETHNICITY_MAP[race_ethnicity]
 
                 values = [float(field.text.replace('\u200b','').replace(',','')) for field in fields[1:]]
                 cases = int(values[0])
